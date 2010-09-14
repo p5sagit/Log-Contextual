@@ -36,23 +36,36 @@ our %EXPORT_TAGS = (
 
 sub import {
    my $package = shift;
-   die 'Log::Contextual does not have a default import list'
-      unless @_;
 
+   my $skipnext;
+   my @rest;
    for my $idx ( 0 .. $#_ ) {
+      if ($skipnext) {
+         $skipnext--;
+         next;
+      }
+
       my $val = $_[$idx];
-      if ( defined $val && $val eq '-logger' ) {
+      if (!defined $val) {
+         next;
+      } elsif ( $val eq '-logger' ) {
          set_logger($_[$idx + 1]);
-         splice @_, $idx, 2;
-      } elsif ( defined $val && $val eq '-package_logger' ) {
+         $skipnext = 1;
+      } elsif ( $val eq '-package_logger' ) {
          _set_package_logger_for(scalar caller, $_[$idx + 1]);
-         splice @_, $idx, 2;
-      } elsif ( defined $val && $val eq '-default_logger' ) {
+         $skipnext = 1;
+      } elsif ( $val eq '-default_logger' ) {
          _set_default_logger_for(scalar caller, $_[$idx + 1]);
-         splice @_, $idx, 2;
+         $skipnext = 1;
+      } else {
+         push @rest, $val;
       }
    }
-   $package->export_to_level(1, $package, @_);
+
+   die 'Log::Contextual does not have a default import list'
+      unless @rest;
+
+   $package->export_to_level(1, $package, @rest);
 }
 
 our $Get_Logger;
