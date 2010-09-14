@@ -51,6 +51,9 @@ sub import {
       } elsif ( $val eq '-logger' ) {
          set_logger($_[$idx + 1]);
          $skipnext = 1;
+      } elsif ( $val eq '-args' ) {
+         _set_package_logger_args_for(scalar caller, $_[$idx + 1]);
+         $skipnext = 1;
       } elsif ( $val eq '-package_logger' ) {
          _set_package_logger_for(scalar caller, $_[$idx + 1]);
          $skipnext = 1;
@@ -71,6 +74,7 @@ sub import {
 our $Get_Logger;
 our %Default_Logger;
 our %Package_Logger;
+our %Package_Logger_Args;
 
 sub _set_default_logger_for {
    my $logger = $_[1];
@@ -80,6 +84,13 @@ sub _set_default_logger_for {
       $logger = do { my $l = $logger; sub { $l } }
    }
    $Default_Logger{$_[0]} = $logger
+}
+
+sub _set_package_logger_args_for {
+   my $args = $_[1];
+   die 'args are not an arrayref.  Please try again.'
+      unless ref $args eq 'ARRAY';
+   $Package_Logger_Args{$_[0]} = $args
 }
 
 sub _set_package_logger_for {
@@ -99,7 +110,10 @@ sub _get_logger($) {
       $Get_Logger ||
       $Default_Logger{$package} ||
       die q( no logger set!  you can't try to log something without a logger! )
-   )->($package);
+   )->({
+      package => $package,
+      args    => $Package_Logger_Args{$package},
+   });
 }
 
 sub set_logger {
