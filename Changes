@@ -1,5 +1,7 @@
 ChangeLog for Log-Contextual
 
+  - Lots of under the cover cleanups, mostly thanks to ribasushi
+
 0.00304 2010-07-31
   - Add $package_UPTO environment variable for WarnLogger
 
