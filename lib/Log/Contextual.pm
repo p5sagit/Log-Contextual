@@ -6,16 +6,10 @@ use warnings;
 our $VERSION = '0.00305';
 
 my @levels = qw(debug trace warn info error fatal);
+use Sub::Exporter 'build_exporter';
 
-require Exporter;
 use Data::Dumper::Concise;
 use Scalar::Util 'blessed';
-
-BEGIN { our @ISA = qw(Exporter) }
-
-my @dlog = ((map "Dlog_$_", @levels), (map "DlogS_$_", @levels));
-
-my @log = ((map "log_$_", @levels), (map "logS_$_", @levels));
 
 eval {
    require Log::Log4perl;
@@ -23,36 +17,106 @@ eval {
    Log::Log4perl->wrapper_register(__PACKAGE__)
 };
 
-our @EXPORT_OK = (
-   @dlog, @log,
-   qw( set_logger with_logger )
-);
+sub parse_arguments {
+  my $self = shift;
+  my $caller = shift;
+  my @args = @{shift @_};
 
-our %EXPORT_TAGS = (
-   dlog => \@dlog,
-   log  => \@log,
-   all  => [@dlog, @log],
-);
+  die 'Log::Contextual does not have a default import list'
+     unless @args;
 
+  my $skipnext;
+  my @rest;
+  for my $idx ( 0 .. $#args ) {
+    my $val = $args[$idx];
+
+    next unless defined $val;
+    if ($skipnext) {
+      $skipnext--;
+      next;
+    }
+
+    if ( $val eq '-logger' ) {
+      set_logger($args[$idx + 1]);
+      $skipnext = 1;
+    } elsif ( $val eq '-package_logger' ) {
+      _set_package_logger_for($caller, $args[$idx + 1]);
+      $skipnext = 1;
+    } elsif ( $val eq '-default_logger' ) {
+      _set_default_logger_for($caller, $args[$idx + 1]);
+      $skipnext = 1;
+    } else {
+      push @rest, $val;
+    }
+  }
+
+  return \@rest
+}
+
+{
 sub import {
-   my $package = shift;
-   die 'Log::Contextual does not have a default import list'
-      unless @_;
+   my $self = shift;
 
-   for my $idx ( 0 .. $#_ ) {
-      my $val = $_[$idx];
-      if ( defined $val && $val eq '-logger' ) {
-         set_logger($_[$idx + 1]);
-         splice @_, $idx, 2;
-      } elsif ( defined $val && $val eq '-package_logger' ) {
-         _set_package_logger_for(scalar caller, $_[$idx + 1]);
-         splice @_, $idx, 2;
-      } elsif ( defined $val && $val eq '-default_logger' ) {
-         _set_default_logger_for(scalar caller, $_[$idx + 1]);
-         splice @_, $idx, 2;
-      }
-   }
-   $package->export_to_level(1, $package, @_);
+   my $inheritor = caller(0);
+   my @rest      = @{$self->parse_arguments($inheritor, \@_)};
+
+   @_ = ($self, @rest);
+
+   my @dlog = ( (map "Dlog_$_", @levels), (map "DlogS_$_", @levels) );
+   my @log  = ( (map "log_$_",  @levels), (map "logS_$_",  @levels) );
+
+   my $import = build_exporter({
+      exports => [
+         (map {
+            my $level = $_;
+            "Dlog_$_" => sub {
+               sub (&@) {
+                 my ($code, @args) = @_;
+                 return _do_log( $level => _get_logger( $inheritor ), sub {
+                    local $_ = (@args?Data::Dumper::Concise::Dumper @args:'()');
+                    $code->(@_)
+                 }, @args );
+               }
+            }
+         } @levels),
+         (map {
+            my $level = $_;
+            "DlogS_$_" => sub {
+               sub (&$) {
+                 my ($code, $ref) = @_;
+                 _do_logS( $level => _get_logger( $inheritor ), sub {
+                    local $_ = Data::Dumper::Concise::Dumper $ref;
+                    $code->($ref)
+                 }, $ref )
+               }
+            }
+         } @levels),
+         (map {
+            my $level = $_;
+            "log_$_" => sub {
+               sub (&@) {
+                  _do_log( $level => _get_logger( $inheritor ), shift @_, @_)
+               }
+            }
+         }  @levels),
+         (map {
+            my $level = $_;
+            "logS_$_" => sub {
+               sub (&$) {
+                  _do_logS( $level => _get_logger( caller ), $_[0], $_[1])
+               }
+            }
+         }  @levels),
+         qw( set_logger with_logger )
+      ],
+      groups  => {
+        dlog => \@dlog,
+        log  => \@log,
+        all  => [ @dlog, @log, qw( set_logger with_logger ) ],
+      },
+   });
+   goto $import
+}
 }
 
 our $Get_Logger;
@@ -133,34 +197,6 @@ sub _do_logS {
    $logger->$level($code->($value))
       if $logger->${\"is_$level"};
    $value
-}
-
-for my $level (@levels) {
-   no strict 'refs';
-
-   *{"log_$level"} = sub (&@) {
-      _do_log( $level => _get_logger( caller ), shift @_, @_)
-   };
-
-   *{"logS_$level"} = sub (&$) {
-      _do_logS( $level => _get_logger( caller ), $_[0], $_[1])
-   };
-
-   *{"Dlog_$level"} = sub (&@) {
-     my ($code, @args) = @_;
-     return _do_log( $level => _get_logger( caller ), sub {
-        local $_ = (@args?Data::Dumper::Concise::Dumper @args:'()');
-        $code->(@_)
-     }, @args );
-   };
-
-   *{"DlogS_$level"} = sub (&$) {
-     my ($code, $ref) = @_;
-     _do_logS( $level => _get_logger( caller ), sub {
-        local $_ = Data::Dumper::Concise::Dumper $ref;
-        $code->($ref)
-     }, $ref )
-   };
 }
 
 1;
