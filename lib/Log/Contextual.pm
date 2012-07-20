@@ -28,12 +28,12 @@ sub ____ {}
 
 exports ('____',
    @dlog, @log,
-   qw( set_logger with_logger )
+   qw( set_logger with_logger set_logger_for )
 );
 
 export_tag dlog => ('____');
 export_tag log  => ('____');
-import_arguments qw(logger package_logger default_logger);
+import_arguments qw(logger_for logger package_logger default_logger);
 
 sub before_import {
    my ($class, $importer, $spec) = @_;
@@ -74,9 +74,14 @@ sub arg_logger { $_[1] }
 sub arg_levels { $_[1] || [qw(debug trace warn info error fatal)] }
 sub arg_package_logger { $_[1] }
 sub arg_default_logger { $_[1] }
+sub arg_logger_for { $_[1] }
 
 sub after_import {
    my ($class, $importer, $specs) = @_;
+
+   if (my $l = $class->arg_logger_for($specs->config->{logger_for})) {
+      set_logger_for($_, $l->{$_}) for keys %$l
+   }
 
    if (my $l = $class->arg_logger($specs->config->{logger})) {
       set_logger($l)
@@ -94,9 +99,20 @@ sub after_import {
 our $Get_Logger;
 our %Default_Logger;
 our %Package_Logger;
+our %Named_Logger;
 
 sub _set_default_logger_for {
    my $logger = $_[1];
+   warn "Setting default logger!";
+
+   if (!ref $logger) {
+      my $tag_name = $logger;
+      $logger = sub {
+         $Named_Logger{$tag_name}
+            or die "no such named logger '$tag_name'!"
+      }
+   }
+
    if(ref $logger ne 'CODE') {
       die 'logger was not a CodeRef or a logger object.  Please try again.'
          unless blessed($logger);
@@ -107,6 +123,14 @@ sub _set_default_logger_for {
 
 sub _set_package_logger_for {
    my $logger = $_[1];
+   if (!ref $logger) {
+      my $tag_name = $logger;
+      $logger = sub {
+         $Named_Logger{$tag_name}
+            or die "no such named logger '$tag_name'!"
+      }
+   }
+
    if(ref $logger ne 'CODE') {
       die 'logger was not a CodeRef or a logger object.  Please try again.'
          unless blessed($logger);
@@ -118,15 +142,36 @@ sub _set_package_logger_for {
 sub _get_logger($) {
    my $package = shift;
    (
-      $Package_Logger{$package} ||
+      ($Package_Logger{$package} && $Package_Logger{$package}->($package)) ||
       $Get_Logger ||
-      $Default_Logger{$package} ||
+      ($Default_Logger{$package} && $Default_Logger{$package}->($package)) ||
       die q( no logger set!  you can't try to log something without a logger! )
    )->($package);
 }
 
+sub set_logger_for {
+   my ($tag,$logger,$really_override) = @_;
+   if(ref $logger ne 'CODE') {
+      die 'logger was not a CodeRef or a logger object.  Please try again.'
+         unless blessed($logger);
+
+       $logger = do { my $l = $logger; sub { $l } }
+   }
+
+   warn "set_logger_for (or -logger_for) called more than once for this ($tag) tag!  " .
+      'this is generally a bad idea!'
+      if $Named_Logger{$tag} && !$really_override;
+   $Named_Logger{$tag} = $logger
+}
+
 sub set_logger {
    my $logger = $_[0];
+   if (!ref $logger) {
+      my $tag_name = $logger;
+      $logger = $Named_Logger{$logger}
+         or die "no such named logger '$tag_name'!"
+   }
+
    if(ref $logger ne 'CODE') {
       die 'logger was not a CodeRef or a logger object.  Please try again.'
          unless blessed($logger);
@@ -140,6 +185,13 @@ sub set_logger {
 
 sub with_logger {
    my $logger = $_[0];
+
+   if (!ref $logger) {
+      my $tag_name = $logger;
+      $logger = $Named_Logger{$logger}
+         or die "no such named logger '$tag_name'!"
+   }
+
    if(ref $logger ne 'CODE') {
       die 'logger was not a CodeRef or a logger object.  Please try again.'
          unless blessed($logger);
