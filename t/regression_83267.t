@@ -39,6 +39,11 @@ require Log::Contextual;
 eval { Log::Contextual->import('log_info') };
 is($@, '', 'Imported log function with out dying');
 
-#don't try to invoke the function for now
-eval { log_info { "test" } 1 };
-is($@, '', 'Was able to invoke log function');
+eval {
+   log_info { "test" } 1
+};
+like(
+   $@,
+   qr/^ no logger set!  you can't try to log something without a logger!/,
+   'Got correct error'
+);
