@@ -4,7 +4,8 @@ use strict;
 use warnings;
 
 our $VERSION = '0.005001';
-$VERSION = eval $VERSION if $VERSION =~ /_/; # numify for warning-free dev releases
+$VERSION = eval $VERSION
+  if $VERSION =~ /_/;    # numify for warning-free dev releases
 
 my @levels = qw(debug trace warn info error fatal);
 
@@ -27,10 +28,7 @@ eval {
 # export anything but the levels selected
 sub ____ { }
 
-exports ('____',
-   @dlog, @log,
-   qw( set_logger with_logger )
-);
+exports('____', @dlog, @log, qw( set_logger with_logger ));
 
 export_tag dlog => ('____');
 export_tag log  => ('____');
@@ -94,74 +92,70 @@ sub before_import {
 
    my @levels = @{$class->arg_levels($spec->config->{levels})};
    for my $level (@levels) {
-      if ($spec->config->{log}) {
-         $spec->add_export(
-            "&log_$level",
-            sub (&@) {
-               my ($code, @args) = @_;
-               $router->handle_log_request(
-                  exporter       => $class,
-                  caller_package => scalar(caller),
-                  caller_level   => 1,
-                  message_level  => $level,
-                  message_sub    => $code,
-                  message_args   => \@args,
-               );
-               return @args;
-            });
-         $spec->add_export(
-            "&logS_$level",
-            sub (&@) {
-               my ($code, @args) = @_;
-               $router->handle_log_request(
-                  exporter       => $class,
-                  caller_package => scalar(caller),
-                  caller_level   => 1,
-                  message_level  => $level,
-                  message_sub    => $code,
-                  message_args   => \@args,
-               );
-               return $args[0];
-            });
-      }
-      if ($spec->config->{dlog}) {
-         $spec->add_export(
-            "&Dlog_$level",
-            sub (&@) {
-               my ($code, @args) = @_;
-               my $wrapped = sub {
-                  local $_ = (@_ ? Data::Dumper::Concise::Dumper @_ : '()');
-                  &$code;
-               };
-               $router->handle_log_request(
-                  exporter       => $class,
-                  caller_package => scalar(caller),
-                  caller_level   => 1,
-                  message_level  => $level,
-                  message_sub    => $wrapped,
-                  message_args   => \@args,
-               );
-               return @args;
-            });
-         $spec->add_export(
-            "&DlogS_$level",
-            sub (&$) {
-               my ($code, $ref) = @_;
-               my $wrapped = sub {
-                  local $_ = Data::Dumper::Concise::Dumper($_[0]);
-                  &$code;
-               };
-               $router->handle_log_request(
-                  exporter       => $class,
-                  caller_package => scalar(caller),
-                  caller_level   => 1,
-                  message_level  => $level,
-                  message_sub    => $wrapped,
-                  message_args   => [$ref],
-               );
-               return $ref;
-            });
-      }
+      $spec->add_export(
+         "&log_$level",
+         sub (&@) {
+            my ($code, @args) = @_;
+            $router->handle_log_request(
+               exporter       => $class,
+               caller_package => scalar(caller),
+               caller_level   => 1,
+               message_level  => $level,
+               message_sub    => $code,
+               message_args   => \@args,
+            );
+            return @args;
+         }) if ($spec->config->{log} || $exports->{"&log_$level"});
+      $spec->add_export(
+         "&logS_$level",
+         sub (&@) {
+            my ($code, @args) = @_;
+            $router->handle_log_request(
+               exporter       => $class,
+               caller_package => scalar(caller),
+               caller_level   => 1,
+               message_level  => $level,
+               message_sub    => $code,
+               message_args   => \@args,
+            );
+            return $args[0];
+         }) if ($spec->config->{log} || $exports->{"&logS_$level"});
+      $spec->add_export(
+         "&Dlog_$level",
+         sub (&@) {
+            my ($code, @args) = @_;
+            my $wrapped = sub {
+               local $_ = (@_ ? Data::Dumper::Concise::Dumper @_ : '()');
+               &$code;
+            };
+            $router->handle_log_request(
+               exporter       => $class,
+               caller_package => scalar(caller),
+               caller_level   => 1,
+               message_level  => $level,
+               message_sub    => $wrapped,
+               message_args   => \@args,
+            );
+            return @args;
+         }) if ($spec->config->{dlog} || $exports->{"&Dlog_$level"});
+      $spec->add_export(
+         "&DlogS_$level",
+         sub (&$) {
+            my ($code, $ref) = @_;
+            my $wrapped = sub {
+               local $_ = Data::Dumper::Concise::Dumper($_[0]);
+               &$code;
+            };
+            $router->handle_log_request(
+               exporter       => $class,
+               caller_package => scalar(caller),
+               caller_level   => 1,
+               message_level  => $level,
+               message_sub    => $wrapped,
+               message_args   => [$ref],
+            );
+            return $ref;
+         }) if ($spec->config->{dlog} || $exports->{"&DlogS_$level"});
    }
 }
 
